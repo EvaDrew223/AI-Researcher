@@ -20,4 +20,4 @@ results_all/
 ai_researcher/scripts_all
 **/logs*/
 scrape_paper.py
-all_ideas/
+all_ideas/keys.json
