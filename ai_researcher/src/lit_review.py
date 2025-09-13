@@ -188,6 +188,12 @@ if __name__ == "__main__":
     parser.add_argument('--grounding_k', type=int, default=10, help='how many papers for grounding when generating next queries')
     parser.add_argument('--cache_name', type=str, help='give a name for the output cache file; leave it None if no need caching')
     parser.add_argument('--print_all', action='store_true', help='whether to print out the intermediate process')
+
+    # arXiv search arguments
+    parser.add_argument("--sources", default="s2", help="comma-separated: s2,arxiv")
+    parser.add_argument('--arxiv_categories', type=str, nargs='*', default='cond-mat.supr-con, cond-mat.str-el, cond-mat.mes-hall', help='arXiv categories to search (e.g., cond-mat.supr-con, cond-mat.str-el, cond-mat.dis-nn, cond-mat.mtrl-sci, cond-mat.mes-hall, cond-mat.quant-gas, cond-mat.stat-mech, quant-ph)')
+    parser.add_argument('--arxiv_max_results', type=int, default=50, help='maximum number of results to fetch from arXiv per query')
+
     args = parser.parse_args()
 
     with open("../keys.json", "r") as f:
