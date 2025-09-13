@@ -1,6 +1,7 @@
 import requests
 import re
 import json
+from arxiv_provider import search_arxiv
 
 # Define the paper search endpoint URL
 search_url = 'https://api.semanticscholar.org/graph/v1/paper/search/'
@@ -146,6 +147,11 @@ def parse_and_execute(output):
         paper_id = match.group(1) if match else None
         if paper_id:
             return GetReferences(paper_id)
+    elif output.startswith("ArxivQuery"):
+       match = re.match(r'ArxivQuery\("([^"]+)"\)', output)
+       query = match.group(1) if match else None
+       if query:
+           return search_arxiv(query)
     
     return None
 

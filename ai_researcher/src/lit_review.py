@@ -40,9 +40,10 @@ def next_query(topic_description, openai_client, model, seed, grounding_papers, 
     prompt += "(1) KeywordQuery(\"keyword\"): find most relevant papers to the given keyword (the keyword shouldn't be too long and specific, otherwise the search engine will fail; it is ok to combine a few shor keywords with spaces, such as \"lanaguage model reasoning\").\n"
     prompt += "(2) PaperQuery(\"paperId\"): find the most similar papers to the given paper (as specified by the paperId).\n"
     prompt += "(3) GetReferences(\"paperId\"): get the list of papers referenced in the given paper (as specified by the paperId).\n"
+    prompt += "(4) ArxivQuery(\"query\"): search arXiv for papers matching the query.\n"  
     prompt += "Right now you have already collected the following relevant papers:\n" + grounding_papers_str + "\n"
     prompt += "You can formulate new search queries based on these papers. And you have already asked the following queries:\n" + "\n".join(past_queries) + "\n"
-    prompt += "Please formulate a new query to expand our paper collection with more diverse and relevant papers (you can do so by diversifying the types of queries and minimizing the overlap with previous queries; e.g., try to include all three types of queries if possible). Directly give me your new query without any explanation or additional text, just the query itself:"
+    prompt += "Please formulate a new query to expand our paper collection with more diverse and relevant papers (you can do so by diversifying the types of queries and minimizing the overlap with previous queries; e.g., try to include all four types of queries if possible). Directly give me your new query without any explanation or additional text, just the query itself:"
     
     prompt_messages = [{"role": "user", "content": prompt}]
     response, cost = call_api(openai_client, model, prompt_messages, temperature=0., max_tokens=100, seed=seed, json_output=False)

@@ -30,6 +30,7 @@ def more_lit_review(grounding_papers, idea_proposal, critic, topic_description, 
     prompt += "(1) KeywordQuery(\"keyword\"): find most relevant papers to the given keyword (the keyword shouldn't be too long and specific, otherwise the search engine will fail; it is ok to combine a few shor keywords with spaces, such as \"lanaguage model reasoning\").\n"
     prompt += "(2) PaperQuery(\"paperId\"): find the most similar papers to the given paper (as specified by the paperId).\n"
     prompt += "(3) GetReferences(\"paperId\"): get the list of papers referenced in the given paper (as specified by the paperId).\n"
+    prompt += "(4) ArxivQuery(\"query\"): search arXiv for papers matching the query.\n"
    
     prompt += "Right now you have already collected the following relevant papers:\n" + grounding_papers_str + "\n"
     prompt += "You should formulate new search queries based on the above to find additional papers that can help address the feeback and improve the project proposal."
