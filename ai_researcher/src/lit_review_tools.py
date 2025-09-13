@@ -2,6 +2,8 @@ import requests
 import re
 import json
 from arxiv_provider import search_arxiv
+from rapidfuzz import fuzz
+
 
 # Define the paper search endpoint URL
 search_url = 'https://api.semanticscholar.org/graph/v1/paper/search/'
@@ -11,6 +13,37 @@ rec_url = "https://api.semanticscholar.org/recommendations/v1/papers/forpaper/"
 with open("../keys.json", "r") as f:
     keys = json.load(f)
 S2_KEY = keys["s2_key"]
+
+def _norm_title(t: str) -> str:
+    return "".join(c for c in t.lower() if c.isalnum() or c.isspace()).strip()
+
+def _dedup_merge(s2_list, ax_list):
+    # Prefer DOI, then arXiv ID, then fuzzy title match
+    by_doi = {}
+    for p in s2_list + ax_list:
+        doi = (p.get("doi") or "").lower().strip()
+        if doi:
+            by_doi.setdefault(doi, p)
+
+    merged = []
+    seen_titles = set()
+    # Start with S2 (keeps existing behavior)
+    for p in s2_list:
+        merged.append(p)
+        seen_titles.add(_norm_title(p.get("title","")))
+
+    # Add arXiv if not a duplicate
+    for p in ax_list:
+        t = _norm_title(p.get("title",""))
+        if p.get("doi") and p["doi"].lower().strip() in by_doi:
+            continue
+        # soft title match threshold 90
+        if any(fuzz.token_sort_ratio(t, st) >= 90 for st in seen_titles):
+            continue
+        merged.append(p)
+        seen_titles.add(t)
+
+    return merged
 
 def KeywordQuery(keyword):
     ## retrieve papers based on keywords
@@ -104,54 +137,76 @@ def paper_filter(paper_lst):
         filtered_lst.append(paper)
     return filtered_lst
 
-def parse_and_execute(output):
+def parse_and_execute(output, sources=None, arxiv_categories=None, arxiv_max_results=50):
     ## parse gpt4 output and execute corresponding functions
+    if sources is None:
+        sources = ["s2"]  # default to S2 only
+    
+    papers_s2 = []
+    papers_ax = []
+
     if output.startswith("KeywordQuery"):
         match = re.match(r'KeywordQuery\("([^"]+)"\)', output)
         keyword = match.group(1) if match else None
         if keyword:
-            response = KeywordQuery(keyword)
-            if 'total' in response and response['total'] == 0:
-                return None
-            if response is not None:
-                if "data" in response:
-                    paper_lst = response["data"]
-                else:
-                    paper_lst = response[:]
-                return paper_filter(paper_lst)
+            if "s2" in sources:
+                response = KeywordQuery(keyword)
+                if 'total' in response and response['total'] == 0:
+                    papers_s2 = []
+                elif response is not None:
+                    if "data" in response:
+                        papers_s2 = response["data"]
+                    else:
+                        papers_s2 = response[:]
+                    papers_s2 = paper_filter(papers_s2)
+            
+            if "arxiv" in sources:
+                papers_ax = search_arxiv(keyword, categories=arxiv_categories, max_results=arxiv_max_results)
+        
+        # Merge and deduplicate results for KeywordQuery
+        if papers_s2 or papers_ax:
+            return _dedup_merge(papers_s2, papers_ax)
+    
     elif output.startswith("PaperQuery"):
         match = re.match(r'PaperQuery\("([^"]+)"\)', output)
         paper_id = match.group(1) if match else None
-        if paper_id:
+        if paper_id and "s2" in sources:
             response = PaperQuery(paper_id)
             if response is not None and response["recommendedPapers"]:
-                paper_lst = response["recommendedPapers"]
-                return paper_filter(paper_lst)
+                papers_s2 = response["recommendedPapers"]
+                return paper_filter(papers_s2)
+    
     elif output.startswith("GetAbstract"):
         match = re.match(r'GetAbstract\("([^"]+)"\)', output)
         paper_id = match.group(1) if match else None
-        if paper_id:
+        if paper_id and "s2" in sources:
             return GetAbstract(paper_id)
+
     elif output.startswith("GetCitationCount"):
         match = re.match(r'GetCitationCount\("([^"]+)"\)', output)
         paper_id = match.group(1) if match else None
-        if paper_id:
+        if paper_id and "s2" in sources:
             return GetCitationCount(paper_id)
+
     elif output.startswith("GetCitations"):
         match = re.match(r'GetCitations\("([^"]+)"\)', output)
         paper_id = match.group(1) if match else None
-        if paper_id:
+        if paper_id and "s2" in sources:
             return GetCitations(paper_id)
+
     elif output.startswith("GetReferences"):
         match = re.match(r'GetReferences\("([^"]+)"\)', output)
         paper_id = match.group(1) if match else None
-        if paper_id:
-            return GetReferences(paper_id)
+        if paper_id and "s2" in sources:
+            papers_s2 = GetReferences(paper_id)
+            return papers_s2
+
     elif output.startswith("ArxivQuery"):
        match = re.match(r'ArxivQuery\("([^"]+)"\)', output)
        query = match.group(1) if match else None
-       if query:
-           return search_arxiv(query)
+       if query and "arxiv" in sources:
+            papers_ax = search_arxiv(query, categories=arxiv_categories, max_results=arxiv_max_results)
+            return papers_ax
     
     return None
 
