@@ -29,6 +29,7 @@ def _dedup_merge(s2_list, ax_list):
     seen_titles = set()
     # Start with S2 (keeps existing behavior)
     for p in s2_list:
+        p["source"] = "s2"  # Add source information
         merged.append(p)
         seen_titles.add(_norm_title(p.get("title","")))
 
@@ -36,10 +37,23 @@ def _dedup_merge(s2_list, ax_list):
     for p in ax_list:
         t = _norm_title(p.get("title",""))
         if p.get("doi") and p["doi"].lower().strip() in by_doi:
+            # Update existing paper to show it's found in both sources
+            for existing_p in merged:
+                if existing_p.get("doi") and existing_p["doi"].lower().strip() == p["doi"].lower().strip():
+                    if existing_p.get("source") == "s2":
+                        existing_p["source"] = "s2,arxiv"
+                    break
             continue
         # soft title match threshold 90
         if any(fuzz.token_sort_ratio(t, st) >= 90 for st in seen_titles):
+            # Update existing paper to show it's found in both sources
+            for existing_p in merged:
+                if fuzz.token_sort_ratio(t, _norm_title(existing_p.get("title",""))) >= 90:
+                    if existing_p.get("source") == "s2":
+                        existing_p["source"] = "s2,arxiv"
+                    break
             continue
+        p["source"] = "arxiv"  # Add source information
         merged.append(p)
         seen_titles.add(t)
 
@@ -137,7 +151,7 @@ def paper_filter(paper_lst):
         filtered_lst.append(paper)
     return filtered_lst
 
-def parse_and_execute(output, sources=None, arxiv_categories=None, arxiv_max_results=50):
+def parse_and_execute(output, sources=None, arxiv_categories=None, arxiv_max_results=50, original_topic_description=None):
     ## parse gpt4 output and execute corresponding functions
     if sources is None:
         sources = ["s2"]  # default to S2 only
@@ -151,7 +165,7 @@ def parse_and_execute(output, sources=None, arxiv_categories=None, arxiv_max_res
         if keyword:
             if "s2" in sources:
                 response = KeywordQuery(keyword)
-                if 'total' in response and response['total'] == 0:
+                if response is not None and 'total' in response and response['total'] == 0:
                     papers_s2 = []
                 elif response is not None:
                     if "data" in response:
@@ -159,9 +173,19 @@ def parse_and_execute(output, sources=None, arxiv_categories=None, arxiv_max_res
                     else:
                         papers_s2 = response[:]
                     papers_s2 = paper_filter(papers_s2)
+                    # Add source information for S2-only case
+                    if "arxiv" not in sources:
+                        for p in papers_s2:
+                            p["source"] = "s2"
             
             if "arxiv" in sources:
-                papers_ax = search_arxiv(keyword, categories=arxiv_categories, max_results=arxiv_max_results)
+                # For arXiv, use the original long topic description if available
+                arxiv_query = original_topic_description if original_topic_description else keyword
+                papers_ax = search_arxiv(arxiv_query, categories=arxiv_categories, max_results=arxiv_max_results)
+                # Add source information for arXiv-only case
+                if "s2" not in sources:
+                    for p in papers_ax:
+                        p["source"] = "arxiv"
         
         # Merge and deduplicate results for KeywordQuery
         if papers_s2 or papers_ax:
@@ -174,7 +198,11 @@ def parse_and_execute(output, sources=None, arxiv_categories=None, arxiv_max_res
             response = PaperQuery(paper_id)
             if response is not None and response["recommendedPapers"]:
                 papers_s2 = response["recommendedPapers"]
-                return paper_filter(papers_s2)
+                papers_s2 = paper_filter(papers_s2)
+                # Add source information
+                for p in papers_s2:
+                    p["source"] = "s2"
+                return papers_s2
     
     elif output.startswith("GetAbstract"):
         match = re.match(r'GetAbstract\("([^"]+)"\)', output)
@@ -205,12 +233,17 @@ def parse_and_execute(output, sources=None, arxiv_categories=None, arxiv_max_res
        match = re.match(r'ArxivQuery\("([^"]+)"\)', output)
        query = match.group(1) if match else None
        if query and "arxiv" in sources:
-            papers_ax = search_arxiv(query, categories=arxiv_categories, max_results=arxiv_max_results)
+            # Use the original long topic description if available, like KeywordQuery does
+            arxiv_query = original_topic_description if original_topic_description else query
+            papers_ax = search_arxiv(arxiv_query, categories=arxiv_categories, max_results=arxiv_max_results)
+            # Add source information
+            for p in papers_ax:
+                p["source"] = "arxiv"
             return papers_ax
     
     return None
 
-def format_papers_for_printing(paper_lst, include_abstract=True, include_score=True, include_id=True):
+def format_papers_for_printing(paper_lst, include_abstract=True, include_score=True, include_id=True, include_source=True):
     ## convert a list of papers to a string for printing or as part of a prompt 
     output_str = ""
     for paper in paper_lst:
@@ -223,6 +256,8 @@ def format_papers_for_printing(paper_lst, include_abstract=True, include_score=T
             output_str += "tldr: " + paper["tldr"]["text"].strip() + "\n"
         if "score" in paper and include_score:
             output_str += "relevance score: " + str(paper["score"]) + "\n"
+        if "source" in paper and include_source:
+            output_str += "source: " + paper["source"] + "\n"
         output_str += "\n"
 
     return output_str

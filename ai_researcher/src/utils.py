@@ -5,6 +5,8 @@ import random
 def calc_price(model, usage):
     if "claude-3-5-sonnet" in model:
         return (3.0 * usage.input_tokens + 15.0 * usage.output_tokens) / 1000000.0
+    if "claude-3-5-haiku" in model:
+        return (1.2 * usage.input_tokens + 1.2 * usage.output_tokens) / 1000000.0
     if model == "gpt-4o":
         return (2.5 * usage.prompt_tokens + 10.0 * usage.completion_tokens) / 1000000.0
     if model == "o1-preview":

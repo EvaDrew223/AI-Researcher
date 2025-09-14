@@ -10,10 +10,14 @@ import retry
 
 def initial_search(topic_description, openai_client, model, seed, mode="topic", idea=None):
     if mode == "topic":
-        ## use the topic description as the query
-        # prompt = "You are a researcher doing literature review on the topic of " + topic_description.strip() + ".\n"
-        # prompt += "You should propose some keywords for querying the Semantic Scholar API to find the most relevant papers to this topic. You can start by extracting and combining the keywords from the topic description. "
-        return "", "KeywordQuery(\"" + topic_description.lower().strip() + "\")", 0
+        ## use AI to generate a focused initial query
+        prompt = "You are a researcher doing literature review on the topic of " + topic_description.strip() + ".\n"
+        prompt += "You should propose a concise keyword query for the Semantic Scholar API to find the most relevant papers to this topic. "
+        prompt += "Extract the most important keywords from the topic description and combine them into a short, focused query (maximum 10-15 words). "
+        prompt += "Formulate your query as: KeywordQuery(\"query\"). Just give me one query with no additional text:"
+        prompt_messages = [{"role": "user", "content": prompt}]
+        response, cost = call_api(openai_client, model, prompt_messages, temperature=0., max_tokens=100, seed=seed, json_output=False)
+        return prompt, response.strip(), cost
     elif mode == "idea":
         prompt = "You are a professor. You need to evaluate the novelty of a proposed research idea.\n"
         prompt += "The idea is:\n" + format_plan_json(idea) + "\n\n"
@@ -37,7 +41,7 @@ def next_query(topic_description, openai_client, model, seed, grounding_papers, 
         prompt += "You want to do a round of paper search in order to find out whether the proposed project has already been done. "
         prompt += "You should propose some queries for using the Semantic Scholar API to find the most relevant papers to this proposed idea. "
     prompt += "You are allowed to use the following functions for making queries:\n"
-    prompt += "(1) KeywordQuery(\"keyword\"): find most relevant papers to the given keyword (the keyword shouldn't be too long and specific, otherwise the search engine will fail; it is ok to combine a few shor keywords with spaces, such as \"lanaguage model reasoning\").\n"
+    prompt += "(1) KeywordQuery(\"keyword\"): find most relevant papers to the given keyword (the keyword shouldn't be too long and specific, otherwise the search engine will fail; it is ok to combine a few short keywords with spaces, such as \"lanaguage model reasoning\").\n"
     prompt += "(2) PaperQuery(\"paperId\"): find the most similar papers to the given paper (as specified by the paperId).\n"
     prompt += "(3) GetReferences(\"paperId\"): get the list of papers referenced in the given paper (as specified by the paperId).\n"
     prompt += "(4) ArxivQuery(\"query\"): search arXiv for papers matching the query.\n"  
@@ -77,7 +81,7 @@ def paper_score(paper_lst, topic_description, openai_client, model, seed, mode="
 
 
 @retry.retry(tries=3, delay=2)
-def collect_papers(topic_description, openai_client, model, seed, grounding_k = 10, max_papers=60, print_all=True, mode = "topic", idea=None):
+def collect_papers(topic_description, openai_client, model, seed, grounding_k = 10, max_papers=60, print_all=True, mode = "topic", idea=None, sources=None, arxiv_categories=None, arxiv_max_results=50):
     paper_bank = {}
     total_cost = 0
     all_queries = []
@@ -86,7 +90,7 @@ def collect_papers(topic_description, openai_client, model, seed, grounding_k = 
     _, query, cost = initial_search(topic_description, openai_client, model, seed, mode=mode, idea=idea)
     total_cost += cost
     all_queries.append(query)
-    paper_lst = parse_and_execute(query)
+    paper_lst = parse_and_execute(query, sources=sources, arxiv_categories=arxiv_categories, arxiv_max_results=arxiv_max_results, original_topic_description=topic_description)
     print ("initial query: ", query)
     print ("paper_lst: ", paper_lst)
     if paper_lst:
@@ -132,7 +136,7 @@ def collect_papers(topic_description, openai_client, model, seed, grounding_k = 
         if print_all:
             print ("new query: ", new_query)
         try:
-            paper_lst = parse_and_execute(new_query)
+            paper_lst = parse_and_execute(new_query, sources=sources, arxiv_categories=arxiv_categories, arxiv_max_results=arxiv_max_results, original_topic_description=topic_description)
         except:
             paper_lst = None 
         
@@ -223,7 +227,7 @@ if __name__ == "__main__":
     elif args.mode == "topic":
         topic_description = args.topic_description
 
-    paper_bank, total_cost, all_queries = collect_papers(topic_description, client, args.engine, args.seed, args.grounding_k, max_papers=args.max_paper_bank_size, print_all=args.print_all, mode=args.mode, idea=idea)
+    paper_bank, total_cost, all_queries = collect_papers(topic_description, client, args.engine, args.seed, args.grounding_k, max_papers=args.max_paper_bank_size, print_all=args.print_all, mode=args.mode, idea=idea, sources=args.sources.split(','), arxiv_categories=args.arxiv_categories, arxiv_max_results=args.arxiv_max_results)
     output = format_papers_for_printing(paper_bank[ : 10])
     print ("Top 10 papers: ")
     print (output)
